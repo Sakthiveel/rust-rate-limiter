@@ -1,8 +1,10 @@
 mod record;
 use record::Record;
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Read};
 
 use chrono::{DateTime, TimeDelta, Utc};
+use std::io::prelude::*;
+use std::net::{TcpListener, TcpStream};
 
 #[derive(Debug)]
 struct InMemoryStorage {
@@ -19,7 +21,9 @@ impl InMemoryStorage {
         }
     }
 
-    pub fn consume(&mut self, ip: String, _cur_time: DateTime<Utc>) -> bool {
+    pub fn consume(&mut self, ip: String) -> bool {
+        println!("IP addres :{}", ip);
+        println!("memory : {:?}", self.memory);
         if !self.memory.contains_key(&ip) {
             self.memory.insert(ip.clone(), Record::new(1, Utc::now()));
             return true;
@@ -46,13 +50,58 @@ impl InMemoryStorage {
         return should_allow;
     }
 }
-fn main() {
-    let mut rate_limiter: InMemoryStorage = InMemoryStorage::new(4, 15);
-    while true {
-        let res: bool = rate_limiter.consume(String::from("ip__address"), Utc::now());
 
-        println!("Response = {:?}", res);
-
-        std::thread::sleep(std::time::Duration::from_secs(2));
+fn main() -> std::io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:4000")?;
+    println!("Server running at {}", listener.local_addr()?);
+    // accept connections and process them serially
+    let mut rate_limiter = InMemoryStorage::new(3, 10);
+    for stream in listener.incoming() {
+        let ip_addr = stream?.peer_addr()?.ip().to_string();
+        let res = rate_limiter.consume(ip_addr);
+        if res {
+            println!("Allow");
+        } else {
+            println!("Blocked");
+        }
+        // handle_client(stream?);
     }
+
+    Ok(())
 }
+
+// fn handle_client(mut stream: TcpStream) {
+//     let mut buffer = [0; 1024]; // Create a buffer to hold the incoming data
+//     if let Ok(addr) = stream.peer_addr() {
+//         println!("Client IP Address: {}", addr.ip());
+//     } else {
+//         println!("Could not get client IP address.");
+//     }
+//     match stream.read(&mut buffer) {
+//         Ok(_) => {
+//             // Convert the buffer to a string
+//             let request = String::from_utf8_lossy(&buffer[..]);
+//
+//             // Split the request by lines and get the first line
+//             let request_line = request.lines().next().unwrap_or("");
+//
+//             // Split the request line by spaces and extract the method
+//             let method = request_line.split_whitespace().next().unwrap_or("");
+//
+//             // Print the method (GET, POST, etc.)
+//             let splitStr: Vec<&str> = request_line.split(" ").collect();
+//             // println!("Req : {:?}", request);
+//
+//             // println!("DATA {request}");
+//             // Optionally, respond to the client
+//             let response = "HTTP/1.1 200 OK\r\n\r\nHello, client!";
+//             stream
+//                 .write_all(response.as_bytes())
+//                 .expect("Failed to write response");
+//             stream.flush().expect("Failed to flush stream");
+//         }
+//         Err(e) => {
+//             eprintln!("Failed to read from the stream: {}", e);
+//         }
+//     }
+// }
